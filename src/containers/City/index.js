@@ -36,15 +36,24 @@ export default class City extends React.Component {
   }
 
   componentWillUnmount () {
-    this.renderer.forceContextLoss();
-    this.renderer.dispose();
-    this.scene.clear();
+    this._disposed = true;
+    if (this._rafId) cancelAnimationFrame(this._rafId);
+    if (this._onResize) window.removeEventListener('resize', this._onResize, false);
+    if (this._onClick) this.renderer?.domElement?.removeEventListener('click', this._onClick, false);
+    if (this._onPointerMove) this.renderer?.domElement?.removeEventListener('pointermove', this._onPointerMove, false);
+    this.renderer && this.renderer.forceContextLoss();
+    this.renderer && this.renderer.dispose();
+    this.scene && this.scene.clear();
+    if (this.labelRenderer) {
+      document.body.removeChild(this.labelRenderer.domElement);
+    }
   }
 
   initThree = () => {
     var container, controls, stats;
     var camera, scene, renderer, labelRenderer, light, cityMeshes = [], interactableMeshes = [];
     let _this = this;
+    _this._disposed = false;
     init();
     animate();
     function init() {
@@ -163,10 +172,62 @@ export default class City extends React.Component {
       controls = new OrbitControls(camera, renderer.domElement);
       controls.target.set(0, 0, 0);
       controls.enableDamping = true;
-      window.addEventListener('resize', onWindowResize, false);
+      _this._onResize = onWindowResize;
+      window.addEventListener('resize', _this._onResize, false);
 
       stats = new Stats();
       document.documentElement.appendChild(stats.dom);
+
+      // 增加点击事件，声明raycaster和mouse变量
+      var raycaster = new THREE.Raycaster();
+      var mouse = new THREE.Vector2();
+      function handleMouseClick(event) {
+        console.log(event)
+        // 通过鼠标点击的位置计算出raycaster所需要的点的位置，以屏幕中心为原点，值的范围为-1到1.
+        mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+        mouse.y = - (event.clientY / window.innerHeight) * 2 + 1;
+        // 通过鼠标点的位置和当前相机的矩阵计算出raycaster
+        raycaster.setFromCamera(mouse, camera);
+        // 获取raycaster直线和所有模型相交的数组集合
+        var intersects = raycaster.intersectObjects(interactableMeshes);
+        if (intersects.length > 0) {
+          console.log(intersects[0].object)
+          let mesh = intersects[0].object
+          Animations.animateCamera(camera, controls, { x: mesh.position.x, y: mesh.position.y + 4, z: mesh.position.z + 12 }, { x: 0, y: 0, z: 0 }, 1200, () => {
+            let billboardDiv = document.createElement('div');
+            billboardDiv.className = 'billboard';
+            billboardDiv.textContent = mesh.name;
+            billboardDiv.style.marginTop = '1em';
+            let billboardLabel = new CSS2DObject(billboardDiv);
+            billboardLabel.position.set(0, 0, 0);
+            _this.billboardLabel = billboardLabel;
+            mesh.add(billboardLabel);
+          });
+        } else {
+          interactableMeshes.map(item => {
+            item.remove(_this.billboardLabel);
+          })
+        }
+      }
+      function handleMouseEnter(event) {
+        mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+        mouse.y = - (event.clientY / window.innerHeight) * 2 + 1;
+        raycaster.setFromCamera(mouse, camera);
+        var intersects = raycaster.intersectObjects(interactableMeshes, true);
+        if (intersects.length > 0) {
+          let mesh = intersects[0].object
+          mesh.material.color = new THREE.Color(0x03c03c)
+        } else {
+          interactableMeshes.map(item => {
+            item.material.color = new THREE.Color(0xffffff);
+          })
+        }
+      }
+      renderer.domElement.style.touchAction = 'none';
+      _this._onClick = handleMouseClick;
+      _this._onPointerMove = handleMouseEnter;
+      renderer.domElement.addEventListener('click', _this._onClick, false);
+      renderer.domElement.addEventListener('pointermove', _this._onPointerMove, false);
     }
 
     function onWindowResize() {
@@ -177,62 +238,14 @@ export default class City extends React.Component {
     }
 
     function animate() {
-      requestAnimationFrame(animate);
+      if (_this._disposed) return;
+      _this._rafId = requestAnimationFrame(animate);
       renderer.render(scene, camera);
       labelRenderer.render(scene, camera);
       stats && stats.update();
       TWEEN && TWEEN.update();
       controls && controls.update();
     }
-
-    // 增加点击事件，声明raycaster和mouse变量
-    var raycaster = new THREE.Raycaster();
-    var mouse = new THREE.Vector2();
-    function handleMouseClick(event) {
-      console.log(event)
-      // 通过鼠标点击的位置计算出raycaster所需要的点的位置，以屏幕中心为原点，值的范围为-1到1.
-      mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
-      mouse.y = - (event.clientY / window.innerHeight) * 2 + 1;
-      // 通过鼠标点的位置和当前相机的矩阵计算出raycaster
-      raycaster.setFromCamera(mouse, camera);
-      // 获取raycaster直线和所有模型相交的数组集合
-      var intersects = raycaster.intersectObjects(interactableMeshes);
-      if (intersects.length > 0) {
-        console.log(intersects[0].object)
-        let mesh = intersects[0].object
-        Animations.animateCamera(camera, controls, { x: mesh.position.x, y: mesh.position.y + 4, z: mesh.position.z + 12 }, { x: 0, y: 0, z: 0 }, 1200, () => {
-          let billboardDiv = document.createElement('div');
-          billboardDiv.className = 'billboard';
-          billboardDiv.textContent = mesh.name;
-          billboardDiv.style.marginTop = '1em';
-          let billboardLabel = new CSS2DObject(billboardDiv);
-          billboardLabel.position.set(0, 0, 0);
-          _this.billboardLabel = billboardLabel;
-          mesh.add(billboardLabel);
-        });
-      } else {
-        interactableMeshes.map(item => {
-          item.remove(_this.billboardLabel);
-        })
-      }
-    }
-    function handleMouseEnter(event) {
-      mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
-      mouse.y = - (event.clientY / window.innerHeight) * 2 + 1;
-      raycaster.setFromCamera(mouse, camera);
-      var intersects = raycaster.intersectObjects(interactableMeshes, true);
-      if (intersects.length > 0) {
-        let mesh = intersects[0].object
-        mesh.material.color = new THREE.Color(0x03c03c)
-      } else {
-        interactableMeshes.map(item => {
-          item.material.color = new THREE.Color(0xffffff);
-        })
-      }
-    }
-    renderer.domElement.style.touchAction = 'none';
-    renderer.domElement.addEventListener('click', handleMouseClick, false);
-    renderer.domElement.addEventListener('pointermove', handleMouseEnter, false);
   }
 
   render () {
