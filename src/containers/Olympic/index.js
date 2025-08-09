@@ -1,8 +1,10 @@
 /* eslint-disable */
 import React from 'react';
+import * as THREE from "three";
 import Stats from "three/examples/jsm/libs/stats.module";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls";
 import { TWEEN } from "three/examples/jsm/libs/tween.module.min.js";
+import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader";
 import Animations from '../../assets/utils/animations';
 import landModel from './models/land.glb';
 import treeModel from './models/tree.gltf';
@@ -12,7 +14,6 @@ import skyTexture from './images/sky.jpg';
 import snowTexture from './images/snow.png';
 import treeTexture from './images/tree.png';
 import flagTexture from './images/flag.png';
-require('./libs/GLTFLoader.js');
 import './index.css';
 
 export default class Olympic extends React.Component {
@@ -29,6 +30,22 @@ export default class Olympic extends React.Component {
     this.initThree()
   }
 
+  componentWillUnmount() {
+    this._disposed = true;
+    if (this._rafId) {
+      cancelAnimationFrame(this._rafId);
+    }
+    if (this._onResize) {
+      window.removeEventListener('resize', this._onResize, false);
+    }
+    if (this._onMouseClick) {
+      window.removeEventListener('click', this._onMouseClick, false);
+    }
+    if (this.loadingProcessTimeout) {
+      clearTimeout(this.loadingProcessTimeout);
+    }
+  }
+
   initThree = () => {
     var container, controls, stats, mixer;
     var camera, scene, renderer, light, land = null, meshes = [], points = [];
@@ -37,6 +54,7 @@ export default class Olympic extends React.Component {
     var windowHalfX = window.innerWidth / 2;
     var windowHalfY = window.innerHeight / 2;
     var _this = this;
+    _this._disposed = false;
     init();
     animate();
     function init() {
@@ -100,7 +118,7 @@ export default class Olympic extends React.Component {
       };
 
       // 添加地面
-      var loader = new THREE.GLTFLoader(manager);
+      var loader = new GLTFLoader(manager);
       loader.load(landModel, function (mesh) {
         mesh.scene.traverse(function (child) {
           if (child.isMesh) {
@@ -212,7 +230,7 @@ export default class Olympic extends React.Component {
           if (child.isMesh) {
             meshes.push(child)
             child.material = treeMaterial;
-            child.custromMaterial = treeCustomDepthMaterial;
+            child.customDepthMaterial = treeCustomDepthMaterial;
           }
         });
         mesh.scene.position.set(14, -9, 0);
@@ -289,7 +307,8 @@ export default class Olympic extends React.Component {
       // 水平旋转角度限制
       controls.minAzimuthAngle = -.8;
       controls.maxAzimuthAngle = .8;
-      window.addEventListener('resize', onWindowResize, false);
+      _this._onResize = onWindowResize;
+      window.addEventListener('resize', _this._onResize, false);
     }
 
     function onWindowResize() {
@@ -299,7 +318,8 @@ export default class Olympic extends React.Component {
     }
 
     function animate() {
-      requestAnimationFrame(animate);
+      if (_this._disposed) return;
+      _this._rafId = requestAnimationFrame(animate);
       renderer.render(scene, camera);
       stats && stats.update();
       controls && controls.update();
@@ -333,7 +353,8 @@ export default class Olympic extends React.Component {
         console.log(intersects[0].object)
       }
     }
-    window.addEventListener('click', onMouseClick, false);
+    this._onMouseClick = onMouseClick;
+    window.addEventListener('click', this._onMouseClick, false);
   }
 
   render () {
